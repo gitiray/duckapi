@@ -130,7 +130,7 @@ curl http://localhost:8081/v1/chat/completions \
 
 OpenAI client compatibility (`baseURL = http://localhost:8081/v1`, any `apiKey` unless `API_KEY` is set):
 
-- stale model ids (`gpt-4o-mini`, `claude-3-haiku`, …) resolve to the closest current duck.ai model — `GET /v1/models` is the source of truth;
+- stale model ids (`gpt-4o-mini`, `claude-3-haiku`, …) resolve to the closest current duck.ai model — `GET /v1/models` is the source of truth. Set `STRICT_MODELS=1` to disable all aliasing: only exact upstream model ids are accepted (anything else → 404), and a model duck.ai rejects (restricted/unavailable) errors out instead of silently switching to another model of the same family;
 - `content` may be an array of parts: `{type:"text"}` and `{type:"image_url"}` (data: or http(s) URLs; JPEG is re-encoded to PNG in pure JS — duck.ai rejects JPEG parts);
 - `role: "developer"` maps to `system`;
 - `temperature`, `max_tokens` and friends are accepted and ignored — duck.ai has no such knobs.
@@ -144,6 +144,22 @@ Extensions beyond the OpenAI schema, all optional:
 | `image: true` | duck.ai GenerateImage tool — the response carries `message.images: ["data:image/…;base64,…"]` (known to work with the GPT models; the bot's default for `/img` is `gpt-6-luna`) |
 
 Set `API_KEY` (in `.env` for the Docker profile — compose picks it up automatically — or in the environment) to require `Authorization: Bearer <API_KEY>`; leave it empty only on a trusted network.
+
+### Deploy the API on Faable
+
+The repo root ships a [faable.json](faable.json) pointing the start command at `node api.js`, so this fork is Faable-ready as-is (it builds with the free Node.js buildpack; the Dockerfile is ignored, and Docker builds are paid on Faable anyway):
+
+```bash
+npm i -g @faable/faable && faable login && faable deploy
+faable deploy secrets set API_KEY=your-secret
+```
+
+Platform notes:
+
+- set `STRICT_MODELS=1` as an environment variable to keep model ids aligned with the live upstream list (see above);
+- use `stream: true` — Faable's limit is 60 s of time-to-first-byte; a stream's headers go out before the model is called, while a non-stream answer that takes longer 504s;
+- on the Free plan the app sleeps after 30 min idle, so the first request after a sleep re-solves the duck.ai challenge (a second or two of extra latency);
+- Free includes 10 GB of egress per month — image-generation answers are base64 data URLs (a few MB each).
 
 ## Configuration (`.env`)
 

@@ -134,7 +134,7 @@ curl http://localhost:8081/v1/chat/completions \
 
 Совместимость с OpenAI-клиентами (`baseURL = http://localhost:8081/v1`, `apiKey` — любой, если не задан `API_KEY`):
 
-- устаревшие id моделей (`gpt-4o-mini`, `claude-3-haiku`, …) под капотом маппятся на ближайшую актуальную модель duck.ai — истина в `GET /v1/models`;
+- устаревшие id моделей (`gpt-4o-mini`, `claude-3-haiku`, …) под капотом маппятся на ближайшую актуальную модель duck.ai — истина в `GET /v1/models`. Поставь `STRICT_MODELS=1`, чтобы отключить все алиасы: принимается только точный id из живого списка upstream (всё остальное → 404), а модель, которую duck.ai отклоняет (restricted/unavailable), возвращает ошибку вместо тихой подмены другой моделью того же семейства;
 - `content` может быть массивом частей: `{type:"text"}` и `{type:"image_url"}` (data: или http(s)-URL; JPEG перекодируется в PNG на чистом JS — duck.ai JPEG-части не принимает);
 - `role: "developer"` маппится в `system`;
 - `temperature`, `max_tokens` и прочее принимается и игнорируется — у duck.ai таких ручек нет.
@@ -148,6 +148,22 @@ curl http://localhost:8081/v1/chat/completions \
 | `image: true` | тул GenerateImage duck.ai — в ответе появится `message.images: ["data:image/…;base64,…"]` (работает на GPT-моделях; дефолт `/img` у бота — `gpt-6-luna`) |
 
 Задай `API_KEY` (в `.env` — compose подхватит сам — или в переменных окружения), чтобы требовать `Authorization: Bearer <API_KEY>`; пустое значение оставляй только в доверенной сети.
+
+### Деплой API на Faable
+
+В корне репо лежит [faable.json](faable.json) с командой старта `node api.js` — этот форк готов к Faable как есть (сборка идёт бесплатным Node.js buildpack'ом; Dockerfile игнорируется — да и на Faable Docker-сборки только на платных планах):
+
+```bash
+npm i -g @faable/faable && faable login && faable deploy
+faable deploy secrets set API_KEY=your-secret
+```
+
+Нюансы платформы:
+
+- поставь переменную окружения `STRICT_MODELS=1`, чтобы id моделей совпадали с живым списком upstream (см. выше);
+- используй `stream: true` — у Faable лимит 60 секунд до начала ответа (time-to-first-byte): у стрима заголовки уходят до вызова модели, а не-стрим, генерирующийся дольше, получит 504;
+- на Free-плане приложение засыпает после 30 минут простоя, поэтому первый запрос после сна заново решает challenge duck.ai (на 1–2 секунды дольше);
+- в Free входит 10 ГБ исходящего трафика в месяц — ответы генерации картинок — base64 data URL (по несколько МБ каждый).
 
 ## Конфигурация (`.env`)
 
