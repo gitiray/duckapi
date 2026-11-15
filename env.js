@@ -1,6 +1,6 @@
-// env.js — zero-dependency .env loader. Imported FIRST by app.js so that
-// BOT_TOKEN / PORT / DATA_DIR / ADMIN_IDS / WEBAPP_URL are in process.env
-// before anything else runs. Existing environment variables always win.
+// env.js — zero-dependency .env loader. Imported FIRST by api.js so that
+// PORT / API_KEY / STRICT_MODELS are in process.env before anything else
+// runs. Existing environment variables always win.
 import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';

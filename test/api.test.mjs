@@ -38,7 +38,12 @@ assert.equal(resolveModel('', MODELS).id, 'gpt-5.4-mini'); // default = preferre
 assert.equal(resolveModel('gpt-4o-mini', MODELS).id, 'gpt-5.4-mini');
 assert.equal(resolveModel('claude-3-haiku', MODELS).id, 'claude-haiku-4-5');
 assert.equal(resolveModel('totally-unknown-model', MODELS), null);
-console.log('  ✓ resolveModel: exact / case-insensitive / preferred default / stale-id aliases / unknown');
+// strict mode: exact upstream ids only, no aliasing of any kind
+assert.equal(resolveModel('gpt-4o-mini', MODELS, true), null); // no family alias
+assert.equal(resolveModel('haiku', MODELS, true), null); // no substring match
+assert.equal(resolveModel('CLAUDE-HAIKU-4-5', MODELS, true).id, 'claude-haiku-4-5'); // exact, case-insensitive
+assert.equal(resolveModel('', MODELS, true).id, 'gpt-5.4-mini'); // empty still means "default"
+console.log('  ✓ resolveModel: exact / case-insensitive / preferred default / stale-id aliases / unknown / strict');
 
 // --- server instances ----------------------------------------------------
 
@@ -240,6 +245,38 @@ const OPEN = 'http://127.0.0.1:' + openServer.address().port;
   const tried = chatCalls.map((c) => c.model);
   assert.deepEqual(tried, ['gpt-5.6-terra', 'gpt-5.4-mini']);
   console.log('  ✓ ERR_MODEL_RESTRICTED → automatic fallback to the next family candidate');
+}
+
+// --- strict mode (STRICT_MODELS): upstream-aligned, no aliasing, no swap -------
+
+{
+  const strictServer = await startApiServer({ port: 0, strictModels: true, chat: fakeChat, listModels: async () => MODELS });
+  const STRICT = 'http://127.0.0.1:' + strictServer.address().port;
+  const spost = (body) => fetch(STRICT + '/v1/chat/completions', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+
+  // stale/alias ids no longer resolve — 404 with the available list
+  let r = await spost({ model: 'gpt-4o-mini', messages: [{ role: 'user', content: 'hi' }] });
+  assert.equal(r.status, 404);
+  assert.equal((await r.json()).error.code, 'model_not_found');
+
+  // exact upstream id is used as-is
+  r = await spost({ model: 'gpt-5.4-mini', messages: [{ role: 'user', content: 'hi' }] });
+  assert.equal(r.status, 200);
+  assert.equal((await r.json()).model, 'gpt-5.4-mini');
+
+  // restricted model errors out — no silent swap to another family member
+  chatCalls.length = 0;
+  r = await spost({ model: 'gpt-5.6-terra', messages: [{ role: 'user', content: 'hi' }] });
+  assert.equal(r.status, 502);
+  assert.match((await r.json()).error.message, /ERR_MODEL_RESTRICTED/);
+  assert.deepEqual(chatCalls.map((c) => c.model), ['gpt-5.6-terra']); // exactly one attempt
+
+  strictServer.close();
+  console.log('  ✓ strict mode: alias → 404, exact id used as-is, restricted → 502 (no swap)');
 }
 
 authServer.close();

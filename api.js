@@ -1,12 +1,12 @@
 #!/usr/bin/env node
 // api.js — OpenAI-compatible HTTP API over the duck.ai protocol.
 //
-// A Telegram-free entrypoint: no BOT_TOKEN, no Bot API, no SQLite. The whole
-// duck.ai client (bot/lib/duckai.js) is standalone, so this file is just a
-// thin HTTP adapter on top of it. Challenge tokens / fe-metadata are cached
-// in process memory (pass store: null — nothing is persisted).
+// No Telegram, no BOT_TOKEN, no SQLite. The whole duck.ai client
+// (lib/duckai.js) is standalone, so this file is just a thin HTTP adapter
+// on top of it. Challenge tokens / fe-metadata are cached in process
+// memory (pass store: null — nothing is persisted).
 //
-//   GET  /                        — status (also used by the Docker healthcheck)
+//   GET  /                        — status (also used as a liveness probe)
 //   GET  /health                  — same as /
 //   GET  /v1/models               — live model list from duck.ai (static fallback)
 //   POST /v1/chat/completions     — chat completion, stream and non-stream
@@ -20,8 +20,8 @@
 // JPEG is re-encoded to PNG in pure JS, duck.ai rejects JPEG parts).
 //
 // Env:  PORT (default 8080), API_KEY (optional; when set, clients must send
-//       "Authorization: Bearer <API_KEY>"), DATA_DIR (unused, accepted for
-//       symmetry with app.js).
+//       "Authorization: Bearer <API_KEY>"), STRICT_MODELS (optional; "1"
+//       disables model aliasing — only exact upstream model ids resolve).
 //
 // CLI:  node api.js            — run the API server
 //       node api.js models     — print the model list and exit
@@ -31,16 +31,16 @@ import { createServer } from 'node:http';
 import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import * as duckai from './bot/lib/duckai.js';
-import { sniffImageMime, jpegToPngDataUrl } from './bot/lib/imgconv.js';
+import * as duckai from './lib/duckai.js';
+import { sniffImageMime, jpegToPngDataUrl } from './lib/imgconv.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 
 const log = (...a) => console.log(new Date().toISOString().slice(11, 19), ...a);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-// Static fallback (same ids as bot/lib/settings.js MODEL_NAMES) for the rare
-// moments duck.ai itself is unreachable — /v1/models must stay predictable.
+// Static fallback for the rare moments duck.ai itself is unreachable —
+// /v1/models must stay predictable.
 const FALLBACK_MODELS = [
   { id: 'gpt-5.4-mini', name: 'GPT-5.4 mini', provider: 'openai', free: true, image: false, efforts: ['none', 'low', 'medium'] },
   { id: 'gpt-6-luna', name: 'GPT-6 Luna', provider: 'openai', free: true, image: false, efforts: ['none', 'low', 'medium'] },

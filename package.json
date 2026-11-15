@@ -3,21 +3,15 @@
   "version": "1.1.0",
   "private": true,
   "type": "module",
-  "description": "Self-hosted Telegram AI bot on the duck.ai protocol — GPT/Claude/Mistral, streaming answers, /img, photo vision, Mini App. Also ships an OpenAI-compatible HTTP API (api.js) that needs no Telegram token. VPS port of a Telegram Serverless bot.",
+  "description": "OpenAI-compatible HTTP API on DuckDuckGo's free duck.ai models — GPT/Claude/Mistral, streaming answers, image generation, photo vision. No API keys, no browser, pure JS.",
   "engines": {
     "node": ">=22.5.0"
   },
   "scripts": {
-    "start": "node app.js",
+    "start": "node api.js",
     "api": "node api.js",
-    "setup": "node app.js setup",
-    "test": "node test/orm.test.mjs && node test/http.test.mjs && node test/api.test.mjs"
-  },
-  "dependencies": {
-    "sdk": "file:platform/sdk"
-  },
-  "optionalDependencies": {
-    "better-sqlite3": "^12.2.0"
+    "models": "node api.js models",
+    "test": "node test/api.test.mjs"
   },
   "license": "MIT"
 }
