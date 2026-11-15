@@ -148,10 +148,16 @@ export function makeModelCache({ fetchFn, chat, listModels } = {}) {
 // GPT instead of erroring out. Preferred (known-working) models win inside
 // their family; the default is the best preferred model, not duck.ai's list
 // head (which is often a restricted flagship).
-export function resolveModel(requested, models) {
+// strict = true disables all aliasing: only an exact (case-insensitive)
+// upstream model id is accepted, anything else -> null (404).
+export function resolveModel(requested, models, strict) {
   const q = String(requested || '').trim().toLowerCase();
   if (!models || !models.length) return null;
   const byPref = (a, b) => prefRank(a.id) - prefRank(b.id);
+  if (strict) {
+    if (!q) return models.slice().sort(byPref)[0]; // empty still means "default"
+    return models.find((m) => m.id.toLowerCase() === q) || null;
+  }
   if (!q) return models.slice().sort(byPref)[0];
   let hit = models.find((m) => m.id.toLowerCase() === q);
   if (hit) return hit;
@@ -323,7 +329,7 @@ async function handleChatCompletions(req, res, ctx) {
   }
 
   const models = await getModels();
-  const model = resolveModel(body.model, models);
+  const model = resolveModel(body.model, models, ctx.strict);
   if (!model) {
     return sendError(res, status(404), 'model not found: ' + String(body.model) +
       '. Available: ' + models.map((m) => m.id).join(', '), 'invalid_request_error', 'model_not_found');
@@ -356,7 +362,9 @@ async function handleChatCompletions(req, res, ctx) {
 
   if (!stream) {
     try {
-      const { result: out, modelUsed } = await chatWithFallback(params, model, models, chat);
+      const { result: out, modelUsed } = ctx.strict
+        ? { result: await chat(params), modelUsed: model.id } // no silent model swap
+        : await chatWithFallback(params, model, models, chat);
       const text = (out && typeof out === 'object') ? (out.text || '') : String(out || '');
       const img = (out && typeof out === 'object' && out.image) ? out.image : null;
       const message = { role: 'assistant', content: text };
@@ -411,10 +419,10 @@ async function handleChatCompletions(req, res, ctx) {
   };
 
   try {
-    const out = await chatWithFallback({
-      ...params,
-      onDelta: (d) => { if (!closed) { sendRole(); send(chunk({ content: d })); } },
-    }, model, models, chat, (mid) => { usedModelId = mid; });
+    const onDelta = (d) => { if (!closed) { sendRole(); send(chunk({ content: d })); } };
+    const out = ctx.strict
+      ? await chat({ ...params, onDelta }) // no silent model swap
+      : await chatWithFallback({ ...params, onDelta }, model, models, chat, (mid) => { usedModelId = mid; });
     if (closed) return;
     sendRole();
     const img = (out && typeof out === 'object' && out.image && out.image.b64) ? out.image : null;
@@ -464,6 +472,10 @@ export function startApiServer(opts = {}) {
   const apiKey = opts.apiKey !== undefined ? opts.apiKey : (process.env.API_KEY || '');
   const fetchFn = opts.fetchFn;
   const store = opts.store !== undefined ? opts.store : null;
+  // Strict mode (env STRICT_MODELS=1 or opts.strictModels): no model
+  // aliasing — only exact upstream model ids are accepted, and the
+  // restricted-model fallback is disabled (errors surface instead).
+  const strict = opts.strictModels !== undefined ? opts.strictModels : !!process.env.STRICT_MODELS;
   const chat = opts.chat || ((p) => duckai.chat(p));
   const getModels = makeModelCache({ fetchFn, listModels: opts.listModels });
   const startedAt = Date.now();
@@ -504,7 +516,7 @@ export function startApiServer(opts = {}) {
 
       if (pathname === '/v1/chat/completions' && req.method === 'POST') {
         const meta = {};
-        await handleChatCompletions(req, res, { getModels, chat, fetchFn, store, meta });
+        await handleChatCompletions(req, res, { getModels, chat, fetchFn, store, meta, strict });
         done(meta.status || 200);
         return;
       }
