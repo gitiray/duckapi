@@ -46,6 +46,11 @@ assert.equal(resolveModel('gpt-4o-mini', MODELS, true), null); // no family alia
 assert.equal(resolveModel('haiku', MODELS, true), null); // no substring match
 assert.equal(resolveModel('CLAUDE-HAIKU-4-5', MODELS, true).id, 'claude-haiku-4-5'); // exact, case-insensitive
 assert.equal(resolveModel('', MODELS, true).id, 'gpt-5.4-mini'); // empty still means "default"
+// with both preferred GPTs available, gpt-6-luna is the default / alias target
+const PAIRED = [{ id: 'gpt-5.4-mini' }, { id: 'gpt-6-luna' }];
+assert.equal(resolveModel('', PAIRED).id, 'gpt-6-luna');
+assert.equal(resolveModel('gpt-4o-mini', PAIRED).id, 'gpt-6-luna');
+assert.equal(resolveModel('', PAIRED, true).id, 'gpt-6-luna');
 console.log('  ✓ resolveModel: exact / case-insensitive / preferred default / stale-id aliases / unknown / strict');
 
 // --- static fallback: only live upstream ids, no invented models ----------

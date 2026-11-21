@@ -62,7 +62,7 @@ const MODELS_TTL_MS = 10 * 60 * 1000;
 // models that actually answer on the free tier. Anything not listed keeps the
 // duck.ai order.
 const PREFERRED_MODELS = [
-  'gpt-5.4-mini', 'gpt-6-luna', 'claude-haiku-4-5', 'mistral-small-2603',
+  'gpt-6-luna', 'gpt-5.4-mini', 'claude-haiku-5-5', 'mistral-small-2603',
   'tinfoil/gemma4-31b', 'tinfoil/gpt-oss-120b',
   'gpt-5.6-terra', 'gpt-5.6-sol', 'claude-sonnet-5-5', 'claude-opus-5-5',
 ];
