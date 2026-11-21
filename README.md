@@ -14,7 +14,7 @@ headless-duckapi turns [duck.ai](https://duck.ai) (the chat DuckDuckGo ships for
 | 🎨 **`image: true`** | duck.ai's GenerateImage tool — the response carries `message.images: ["data:image/…;base64,…"]` (known to work with the GPT models) |
 | 📸 **Photo vision** | `image_url` parts (data: or http(s) URLs; JPEG is re-encoded to PNG in pure JS — duck.ai rejects JPEG parts) |
 | 🌐 **Web search** | `web_search: true` — duck.ai's WebSearch tool |
-| 🧠 **Reasoning effort** | `reasoning_effort: "none" / "low" / "medium"` (validated per model) |
+| 🧠 **Reasoning effort** | `reasoning_effort`: `none` / `minimal` / `low` / `medium` / `high` / `xhigh` / `max` — automatically clamped down to what the model supports |
 | 🦆 **Antibot-hardened** | Challenge tokens and frontend versions are cached in process memory to stay far away from duck.ai's 418/429 |
 
 ## Quick start (native)
@@ -89,7 +89,7 @@ Extensions beyond the OpenAI schema, all optional:
 
 | Field | Meaning |
 |---|---|
-| `reasoning_effort: "none" / "low" / "medium"` | duck.ai reasoning effort (validated against the model, so you get a 400 instead of a duck.ai 400). Omitted → the model's own default (`none` where advertised, `low` for `tinfoil/gpt-oss-120b`) |
+| `reasoning_effort: "none" / "minimal" / "low" / "medium" / "high" / "xhigh" / "max"` | duck.ai only advertises `none` / `low` / `medium` (per model). In the default loose mode, a value the model cannot use is clamped down to the highest supported level ≤ the requested one (`high` → `medium`, `minimal` → `none`), and the server logs the substitution. With no lower level available (e.g. `tinfoil/gpt-oss-120b` only declares `low`) or for an unknown string, the model's own default is used. `STRICT_MODELS=1` disables this and returns 400 instead. Omitted → the model's own default (`none` where advertised, `low` for `tinfoil/gpt-oss-120b`) |
 | `web_search: true` | duck.ai WebSearch tool |
 | `image: true` | duck.ai GenerateImage tool — the response carries `message.images: ["data:image/…;base64,…"]` |
 
@@ -127,7 +127,7 @@ Solved tokens and frontend versions are held in process memory (nothing is persi
 | `429` from this API | duck.ai is rate-limiting this IP. Wait a moment and retry; the token is refreshed automatically. |
 | `502 duck.ai upstream error` | duck.ai rejected the request (see the message). Restricted models only happen without `STRICT_MODELS` on flagships the free tier can't use. |
 | `404 model not found` (with `STRICT_MODELS=1`) | The id is not in the live duck.ai list — `GET /v1/models` is the source of truth. |
-| `400 invalid_request_error` | duck.ai rejected the request shape — e.g. an unsupported `reasoning_effort`; before v1.3.0 a `system` prompt produced a misleading 502. |
+| `400 invalid_request_error` | duck.ai rejected the request shape, or (with `STRICT_MODELS=1`) an unsupported `reasoning_effort`; in loose mode that effort is downgraded instead. Before v1.3.0 a `system` prompt produced a misleading 502. |
 | `headless-duckapi needs SQLite…` | You are running an older build; this API needs no SQLite at all. Upgrade. |
 
 ## Credits & license

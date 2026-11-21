@@ -3,7 +3,7 @@
 import path from 'node:path';
 import assert from 'node:assert/strict';
 
-const { startApiServer, resolveModel, makeModelCache } = await import('../api.js');
+const { startApiServer, resolveModel, resolveEffort, makeModelCache } = await import('../api.js');
 const { makeProxiedFetch, redactProxyUrl } = await import('../lib/proxyfetch.js');
 
 // --- fakes --------------------------------------------------------------
@@ -52,6 +52,32 @@ assert.equal(resolveModel('', PAIRED).id, 'gpt-6-luna');
 assert.equal(resolveModel('gpt-4o-mini', PAIRED).id, 'gpt-6-luna');
 assert.equal(resolveModel('', PAIRED, true).id, 'gpt-6-luna');
 console.log('  ✓ resolveModel: exact / case-insensitive / preferred default / stale-id aliases / unknown / strict');
+
+// --- reasoning effort: 7-level client scale, clamped down when unsupported --
+{
+  const full = { id: 'a', efforts: ['none', 'low', 'medium'] };
+  const noHigh = { id: 'b', efforts: ['none', 'low'] };
+  const lowOnly = { id: 'c', efforts: ['low'] };
+  const noneDeclared = { id: 'd', efforts: [] };
+  assert.equal(resolveEffort(undefined, noHigh), 'none'); // omitted → default
+  assert.equal(resolveEffort('low', noHigh), 'low'); // supported → unchanged
+  assert.equal(resolveEffort('minimal', noHigh), 'none'); // strict downgrade
+  for (const requested of ['high', 'xhigh', 'max']) {
+    assert.equal(resolveEffort(requested, full), 'medium');
+    assert.equal(resolveEffort(requested, noHigh), 'low');
+  }
+  assert.equal(resolveEffort('medium', noHigh), 'low');
+  assert.equal(resolveEffort('none', lowOnly), 'low'); // no lower candidate → default
+  assert.equal(resolveEffort('minimal', lowOnly), 'low');
+  assert.equal(resolveEffort('medium', lowOnly), 'low');
+  assert.equal(resolveEffort('low', noneDeclared), 'none');
+  assert.equal(resolveEffort('something-weird', full), 'none'); // unknown → default
+  // strict mode preserves the upstream 400 behavior
+  assert.equal(resolveEffort('medium', noHigh, { strict: true }), null);
+  assert.equal(resolveEffort('high', full, { strict: true }), null);
+  assert.equal(resolveEffort('low', noHigh, { strict: true }), 'low');
+  console.log('  ✓ reasoning_effort: none/minimal/low/medium/high/xhigh/max downgrade, strict → 400');
+}
 
 // --- static fallback: only live upstream ids, no invented models ----------
 
@@ -285,11 +311,14 @@ const BAD = 'http://127.0.0.1:' + badServer.address().port;
   r = await post({ messages: [{ role: 'user', content: 'hi' }], model: 'no-such-model' });
   assert.equal(r.status, 404);
   assert.equal((await r.json()).error.code, 'model_not_found');
-  r = await post({ messages: [{ role: 'user', content: 'hi' }], model: 'claude-haiku-4-5', reasoning_effort: 'medium' });
-  assert.equal(r.status, 400); // claude fake supports only none/low
+  // loose mode clamps an unsupported effort to the nearest usable one
+  chatCalls.length = 0;
+  r = await post({ messages: [{ role: 'user', content: 'hi' }], model: 'claude-haiku-4-5', reasoning_effort: 'high' });
+  assert.equal(r.status, 200); // claude fake supports only none/low → "low"
+  assert.equal(chatCalls[chatCalls.length - 1].effort, 'low');
   r = await fetch(OPEN + '/nope');
   assert.equal(r.status, 404);
-  console.log('  ✓ validation: bad json / empty messages / role / model 404 / bad effort / 404 route');
+  console.log('  ✓ validation: bad json / empty messages / role / model 404 / effort downgrade / 404 route');
 }
 
 // --- unknown model alias resolution (stale id reaches the right model) ---------
@@ -352,8 +381,13 @@ const BAD = 'http://127.0.0.1:' + badServer.address().port;
   assert.match((await r.json()).error.message, /ERR_MODEL_RESTRICTED/);
   assert.deepEqual(chatCalls.map((c) => c.model), ['gpt-5.6-terra']); // exactly one attempt
 
+  // unsupported explicit effort is still a 400 in strict mode
+  r = await spost({ model: 'claude-haiku-4-5', messages: [{ role: 'user', content: 'hi' }], reasoning_effort: 'high' });
+  assert.equal(r.status, 400);
+  assert.equal((await r.json()).error.type, 'invalid_request_error');
+
   strictServer.close();
-  console.log('  ✓ strict mode: alias → 404, exact id used as-is, restricted → 502 (no swap)');
+  console.log('  ✓ strict mode: alias → 404, exact id used as-is, restricted → 502, effort → 400 (no swap)');
 }
 
 // --- upstream 400 is a client error, not a gateway error ---------------------

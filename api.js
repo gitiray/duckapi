@@ -195,6 +195,30 @@ export function defaultEffort(model) {
   return efforts.includes('none') ? 'none' : (efforts[0] || 'none');
 }
 
+// Clients use a wider scale than duck.ai's none/low/medium. Rank it so an
+// explicit value the model cannot use can be clamped down to the closest
+// supported one instead of failing forever. Strict mode keeps the upstream
+// 400 behavior (signalled by returning null).
+const EFFORT_RANK = { none: 0, minimal: 1, low: 2, medium: 3, high: 4, xhigh: 5, max: 6 };
+export function resolveEffort(requested, model, { strict } = {}) {
+  const efforts = (model && model.efforts) || [];
+  const fallback = defaultEffort(model);
+  if (requested == null) return fallback;
+  const effort = String(requested);
+  if (efforts.includes(effort)) return effort;
+  if (strict) return null;
+  const rank = EFFORT_RANK[effort];
+  let best = null;
+  if (rank !== undefined) {
+    for (const candidate of efforts) {
+      const cr = EFFORT_RANK[candidate];
+      if (cr === undefined || cr > rank) continue;
+      if (best === null || cr > EFFORT_RANK[best]) best = candidate;
+    }
+  }
+  return best === null ? fallback : best;
+}
+
 // Chat with automatic model fallback: when duck.ai rejects the resolved model
 // with ERR_MODEL_RESTRICTED / ERR_MODEL_UNAVAILABLE (its own list advertises
 // models the free tier can't use), retry the same family in preferred order.
@@ -387,10 +411,14 @@ async function handleChatCompletions(req, res, ctx) {
   }
 
   const explicitEffort = body.reasoning_effort != null;
-  const effort = explicitEffort ? String(body.reasoning_effort) : defaultEffort(model);
-  if (explicitEffort && !(model.efforts || []).includes(effort)) {
-    return sendError(res, status(400), 'model ' + model.id + ' does not support reasoning_effort "' + effort +
+  const requestedEffort = explicitEffort ? String(body.reasoning_effort) : undefined;
+  const effort = resolveEffort(requestedEffort, model, { strict: !!ctx.strict });
+  if (effort === null) {
+    return sendError(res, status(400), 'model ' + model.id + ' does not support reasoning_effort "' + requestedEffort +
       '" (supported: ' + (model.efforts || []).join(', ') + ')');
+  }
+  if (explicitEffort && effort !== requestedEffort) {
+    log('[api] reasoning_effort "' + requestedEffort + '" unsupported by ' + model.id + ', using "' + effort + '"');
   }
   const wantImage = body.image === true;
   // no capability gate here: GenerateImage is a duck.ai tool, not a model flag
