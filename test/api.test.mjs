@@ -3,7 +3,7 @@
 import path from 'node:path';
 import assert from 'node:assert/strict';
 
-const { startApiServer, resolveModel } = await import('../api.js');
+const { startApiServer, resolveModel, makeModelCache } = await import('../api.js');
 const { makeProxiedFetch, redactProxyUrl } = await import('../lib/proxyfetch.js');
 
 // --- fakes --------------------------------------------------------------
@@ -47,6 +47,20 @@ assert.equal(resolveModel('haiku', MODELS, true), null); // no substring match
 assert.equal(resolveModel('CLAUDE-HAIKU-4-5', MODELS, true).id, 'claude-haiku-4-5'); // exact, case-insensitive
 assert.equal(resolveModel('', MODELS, true).id, 'gpt-5.4-mini'); // empty still means "default"
 console.log('  ✓ resolveModel: exact / case-insensitive / preferred default / stale-id aliases / unknown / strict');
+
+// --- static fallback: only live upstream ids, no invented models ----------
+
+{
+  const getModels = makeModelCache({ listModels: async () => { throw new Error('duck.ai unreachable'); } });
+  const models = await getModels();
+  assert.deepEqual(models.map((m) => m.id), [
+    'gpt-6-luna', 'gpt-5.4-mini', 'claude-haiku-5-5',
+    'mistral-small-2603', 'tinfoil/gpt-oss-120b', 'tinfoil/gemma4-31b',
+  ]);
+  // upstream advertises only "low" for gpt-oss-120b — defaultEffort must pick it
+  assert.deepEqual(models.find((m) => m.id === 'tinfoil/gpt-oss-120b').efforts, ['low']);
+  console.log('  ✓ static fallback: 6 live-aligned ids, no stale/invented models');
+}
 
 // --- server instances ----------------------------------------------------
 

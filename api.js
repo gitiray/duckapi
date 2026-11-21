@@ -43,14 +43,15 @@ const log = (...a) => console.log(new Date().toISOString().slice(11, 19), ...a);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // Static fallback for the rare moments duck.ai itself is unreachable —
-// /v1/models must stay predictable.
+// /v1/models must stay predictable. Ids and metadata are kept aligned with
+// the live duck.ai list; no model that upstream no longer advertises is added.
 const FALLBACK_MODELS = [
-  { id: 'gpt-5.4-mini', name: 'GPT-5.4 mini', provider: 'openai', free: true, image: false, efforts: ['none', 'low', 'medium'] },
-  { id: 'gpt-6-luna', name: 'GPT-6 Luna', provider: 'openai', free: true, image: false, efforts: ['none', 'low', 'medium'] },
-  { id: 'claude-haiku-4-5', name: 'Claude Haiku 4.5', provider: 'anthropic', free: true, image: false, efforts: ['none', 'low', 'medium'] },
-  { id: 'mistral-small-2603', name: 'Mistral Small 2603', provider: 'mistral', free: true, image: false, efforts: ['none', 'low', 'medium'] },
-  { id: 'tinfoil/gpt-oss-120b', name: 'GPT-OSS 120B', provider: 'tinfoil', free: true, image: false, efforts: ['none', 'low', 'medium'] },
-  { id: 'tinfoil/gemma4-31b', name: 'Gemma 4 31B', provider: 'tinfoil', free: true, image: false, efforts: ['none', 'low', 'medium'] },
+  { id: 'gpt-6-luna', name: 'GPT-6 Luna', provider: 'openai', free: true, image: true, efforts: ['none', 'low'] },
+  { id: 'gpt-5.4-mini', name: 'GPT-5.4 mini', provider: 'openai', free: true, image: true, efforts: ['none', 'low', 'medium'] },
+  { id: 'claude-haiku-5-5', name: 'Claude Haiku 5.5', provider: 'anthropic', free: true, image: true, efforts: ['none', 'low'] },
+  { id: 'mistral-small-2603', name: 'Mistral Small 4', provider: 'mistral', free: true, image: false, efforts: [] },
+  { id: 'tinfoil/gpt-oss-120b', name: 'gpt-oss 120B', provider: 'tinfoil', free: true, image: false, efforts: ['low'] },
+  { id: 'tinfoil/gemma4-31b', name: 'Gemma 4 31B', provider: 'tinfoil', free: true, image: true, efforts: ['none', 'low'] },
 ];
 const MODELS_TTL_MS = 10 * 60 * 1000;
 
