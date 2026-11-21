@@ -40,6 +40,7 @@ faable deploy secrets set API_KEY=your-secret
 Faable notes:
 
 - set `STRICT_MODELS=1` as an environment variable to keep model ids aligned with the live upstream list (see [Model resolution](#model-resolution));
+- for a public deployment set `API_KEY` or `API_KEYS` as a secret — each key gets its own `RATE_LIMIT_RPM` bucket (default 30/min);
 - use `stream: true` — Faable's limit is 60 s of time-to-first-byte; a stream's headers go out before the model is called, while a non-stream answer that takes longer 504s;
 - on the Free plan the app sleeps after 30 min idle, so the first request after a sleep re-solves the duck.ai challenge (a second or two of extra latency);
 - Free includes 10 GB of egress per month — image-generation answers are base64 data URLs (a few MB each).
@@ -79,7 +80,7 @@ Recommended for public deployments.
 ### OpenAI client compatibility
 
 - `content` may be a string or an array of parts: `{type:"text"}` and `{type:"image_url"}` (data: or http(s) URLs; JPEG is re-encoded to PNG in pure JS — duck.ai rejects JPEG parts);
-- `role: "developer"` maps to `system`;
+- `system` and `role: "developer"` prompts are folded into the first user turn — duck.ai rejects `system` outright with HTTP 400, so the prompt is kept but sent as a user turn;
 - `temperature`, `max_tokens` and friends are accepted and ignored — duck.ai has no such knobs;
 - any `apiKey` is accepted unless `API_KEY` is set.
 
@@ -87,11 +88,25 @@ Extensions beyond the OpenAI schema, all optional:
 
 | Field | Meaning |
 |---|---|
-| `reasoning_effort: "none" / "low" / "medium"` | duck.ai reasoning effort (validated against the model, so you get a 400 instead of a duck.ai 400) |
+| `reasoning_effort: "none" / "low" / "medium"` | duck.ai reasoning effort (validated against the model, so you get a 400 instead of a duck.ai 400). Omitted → the model's own default (`none` where advertised, `low` for `tinfoil/gpt-oss-120b`) |
 | `web_search: true` | duck.ai WebSearch tool |
 | `image: true` | duck.ai GenerateImage tool — the response carries `message.images: ["data:image/…;base64,…"]` |
 
 Set `API_KEY` (in `.env` or the environment) to require `Authorization: Bearer <API_KEY>`; leave it empty only on a trusted network.
+
+Multiple keys are supported too: `API_KEYS=k1,k2,k3` — each key gets its own rate-limit bucket (`RATE_LIMIT_RPM`, default 30/min; exceeding it returns HTTP 429 with `Retry-After`). This is what lets you share a public deployment without letting one client burn the shared duck.ai quota for everyone. A single `API_KEY` keeps working as a one-element list; an open server (no keys configured) is not rate-limited.
+
+## Proxy (`PROXY_URL`)
+
+duck.ai judges you by IP. `PROXY_URL` routes **every** duck.ai request through a forward proxy — `http(s)://host:port` (CONNECT tunneling) or `socks5://host:port`:
+
+```bash
+PROXY_URL=http://proxy.example.com:8080 node api.js
+# Cloudflare WARP in proxy mode: warp-cli proxy start → socks5://127.0.0.1:40000
+PROXY_URL=socks5://127.0.0.1:40000 node api.js
+```
+
+Fail-closed by design: a proxy failure fails the request — there is **no silent direct-connection fallback**, DNS for duck.ai is resolved by the proxy, and proxy credentials are never logged. The proxy is optional; Faable deployments can set it as a secret, but the WARP example above needs a local `warp-cli` and therefore only applies to self-hosted runs.
 
 ## How the duck.ai protocol works
 
@@ -111,6 +126,7 @@ Solved tokens and frontend versions are held in process memory (nothing is persi
 | `429` from this API | duck.ai is rate-limiting this IP. Wait a moment and retry; the token is refreshed automatically. |
 | `502 duck.ai upstream error` | duck.ai rejected the request (see the message). Restricted models only happen without `STRICT_MODELS` on flagships the free tier can't use. |
 | `404 model not found` (with `STRICT_MODELS=1`) | The id is not in the live duck.ai list — `GET /v1/models` is the source of truth. |
+| `400 invalid_request_error` | duck.ai rejected the request shape — e.g. an unsupported `reasoning_effort`; before v1.3.0 a `system` prompt produced a misleading 502. |
 | `headless-duckapi needs SQLite…` | You are running an older build; this API needs no SQLite at all. Upgrade. |
 
 ## Credits & license
