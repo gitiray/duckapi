@@ -67,12 +67,13 @@ curl http://localhost:8080/v1/chat/completions \
 
 By default the API is lenient about model ids, so OpenAI clients keep working:
 
-- stale model ids (`gpt-4o-mini`, `claude-3-haiku`, …) resolve to the closest current duck.ai model — `GET /v1/models` is the source of truth;
-- when duck.ai rejects a model with `ERR_MODEL_RESTRICTED` / `ERR_MODEL_UNAVAILABLE` (its list advertises flagships the free tier can't use), the same request is retried on the next model of the same family, in preferred order.
+- `GET /v1/models` is the source of truth: it mirrors the live duck.ai list minus models marked inaccessible (`free:false`, e.g. `gpt-5.6-terra`, `gpt-5.6-sol`, `claude-sonnet-5-5`, `claude-opus-5-5`). Those flagships are advertised by duck.ai but cannot be used on the free tier, so they are filtered from both the list and model resolution;
+- stale model ids (`gpt-4o-mini`, `claude-3-haiku`, …) resolve to the closest current duck.ai model;
+- when duck.ai rejects a model with `ERR_MODEL_RESTRICTED` / `ERR_MODEL_UNAVAILABLE` (e.g. metadata is stale), the same request is retried on the next model of the same family, in preferred order.
 
-Set **`STRICT_MODELS=1`** (environment or `.env`) to align the API with the upstream exactly:
+Set **`STRICT_MODELS=1`** (environment or `.env`) to align the API with the available duck.ai models exactly:
 
-- only an exact model id from the live duck.ai list resolves (case-insensitive); anything else → `404 model_not_found` with the available list;
+- only an exact model id from the filtered duck.ai list resolves (case-insensitive); anything else → `404 model_not_found` with the available list;
 - a restricted/unavailable model errors out instead of silently switching to another model of the same family.
 
 Recommended for public deployments.

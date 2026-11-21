@@ -55,6 +55,12 @@ const FALLBACK_MODELS = [
 ];
 const MODELS_TTL_MS = 10 * 60 * 1000;
 
+// duck.ai advertises flagship models the anonymous/free tier cannot actually
+// use (ERR_MODEL_RESTRICTED). They arrive with entityHasAccess=false, which we
+// map to free:false. Keep them out of every model list the API exposes, so a
+// client never sees or selects a model that can never answer.
+const usableModels = (models) => (models || []).filter((m) => m && m.free !== false);
+
 // duck.ai's own model list leads with new flagships that are frequently
 // RESTRICTED for anonymous users (ERR_MODEL_RESTRICTED on chat, Oct 2026:
 // gpt-5.6-terra, claude-sonnet-5-5) even though GET /duckchat/v1/models lists
@@ -133,8 +139,9 @@ export function makeModelCache({ fetchFn, chat, listModels } = {}) {
     if (inflight) return inflight;
     inflight = (async () => {
       try {
-        const models = await getM(fetchFn);
-        if (models && models.length) { cache = models; ts = Date.now(); return models; }
+        const models = usableModels(await getM(fetchFn));
+        if (models.length) { cache = models; ts = Date.now(); return models; }
+        log('[api] no free models in upstream list, using static fallback');
       } catch (e) {
         log('[api] model list fetch failed, using static fallback:', (e && e.message) || e);
       }
@@ -625,7 +632,7 @@ async function main() {
   const cmd = (process.argv[2] || '').toLowerCase();
 
   if (cmd === 'models') {
-    const models = await duckai.getModels().catch(() => FALLBACK_MODELS);
+    const models = usableModels(await duckai.getModels().catch(() => FALLBACK_MODELS));
     for (const m of models) log((m.free ? '✓' : ' '), m.id, '—', m.name || '', m.image ? '[image]' : '');
     return;
   }

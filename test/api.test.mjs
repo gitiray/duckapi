@@ -67,6 +67,21 @@ console.log('  ✓ resolveModel: exact / case-insensitive / preferred default / 
   console.log('  ✓ static fallback: 6 live-aligned ids, no stale/invented models');
 }
 
+// --- free:false models are advertised upstream but unusable ---------------
+
+{
+  const upstream = [
+    { id: 'gpt-5.6-terra', name: 'GPT-5.6 Terra', provider: 'openai', free: false, efforts: ['none'] },
+    { id: 'claude-opus-5-5', name: 'Claude Opus 5.5', provider: 'anthropic', free: false, efforts: ['none'] },
+    { id: 'gpt-6-luna', name: 'GPT-6 Luna', provider: 'openai', free: true, efforts: ['none', 'low'] },
+  ];
+  const getModels = makeModelCache({ listModels: async () => upstream });
+  const models = await getModels();
+  assert.deepEqual(models.map((m) => m.id), ['gpt-6-luna']);
+  assert.equal(resolveModel('gpt-5.6-terra', models, true), null); // not selectable in strict mode
+  console.log('  ✓ free:false models filtered from the list and from strict-mode resolution');
+}
+
 // --- server instances ----------------------------------------------------
 
 const key = 'test-key-123';
